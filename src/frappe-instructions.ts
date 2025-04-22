@@ -59,11 +59,13 @@ Example:
 }
 
 Tips:
-- Required fields must be included in the values
-- For Link fields, provide the exact document name as the value
-- For Table fields, provide an array of row objects
-- Child table rows should include all required fields
-- The system will automatically set owner, creation, and modified fields
+- Before creating, use get_doctype_schema to understand required fields, field types, and naming conventions.
+- Required fields must be included in the values.
+- For Link fields, provide the exact document name as the value.
+- For Table fields, provide an array of row objects.
+- Child table rows should include all required fields.
+- The system will automatically set owner, creation, and modified fields.
+- For DocTypes with 'naming_series' or other auto-naming, you can usually omit the 'name' field. For 'prompt' or 'field:' naming, you must provide the 'name'.
       `,
     },
     GET: {
@@ -79,10 +81,11 @@ Example:
 }
 
 Tips:
-- If fields are not specified, all fields will be returned
-- The document name is case-sensitive
-- For standard naming, use the format [DocType]-[Number] (e.g., TODO-0001)
-- For documents with custom naming, use the exact document name
+- If fields are not specified, all fields will be returned. For better performance and clarity, specify only the fields you need.
+- The document name is case-sensitive.
+- For standard naming, use the format [DocType]-[Number] (e.g., TODO-0001).
+- For documents with custom naming, use the exact document name.
+- Use check_document_exists first if you are unsure if a document exists.
       `,
     },
     UPDATE: {
@@ -101,10 +104,10 @@ Example:
 }
 
 Tips:
-- Only include fields that need to be updated
-- For Table fields, you need to provide the entire table data, not just the changed rows
-- The system will automatically update the modified and modified_by fields
-- Some fields may be read-only and cannot be updated
+- Only include fields that need to be updated.
+- For Table fields, you need to provide the entire table data, including the 'name' field for existing rows. Rows without a 'name' will be added as new. Rows in the database not included in the update will be deleted.
+- The system will automatically update the modified and modified_by fields.
+- Some fields may be read-only and cannot be updated. Use get_doctype_schema to check field properties.
       `,
     },
     DELETE: {
@@ -119,9 +122,10 @@ Example:
 }
 
 Tips:
-- Deletion may fail if there are dependent documents
-- Some documents may be set as not deletable in their DocType configuration
-- Deletion permissions are controlled by DocPerm records
+- Deletion may fail if there are dependent documents. Use list_documents on related DocTypes to check for dependencies before attempting deletion.
+- Some documents may be set as not deletable in their DocType configuration. Use get_doctype_schema to check the DocType properties.
+- Deletion permissions are controlled by DocPerm records. Ensure the user has the necessary permissions.
+- Use check_document_exists first if you are unsure if a document exists before attempting deletion.
       `,
     },
     LIST: {
@@ -155,10 +159,11 @@ Available operators:
 - "between" (for date ranges)
 
 Tips:
-- Use limit and limit_start for pagination
-- order_by accepts field name with optional "asc" or "desc" direction
-- If fields are not specified, standard fields will be returned
-- Complex filters can be created using arrays for OR conditions
+- Use limit and limit_start for pagination to handle large result sets efficiently.
+- order_by accepts field name with optional "asc" or "desc" direction. Ordering by indexed fields (like creation or modified) is faster.
+- If fields are not specified, standard fields will be returned. Always specify only the fields you need for better performance.
+- Complex filters can be created using arrays for OR conditions.
+- Use get_document_count to get the total number of documents matching filters for pagination.
       `,
     },
   },
@@ -182,10 +187,11 @@ The response includes:
 - Workflow information (if applicable)
 
 Tips:
-- Use this to understand the structure of a DocType before creating or updating documents
-- Check required fields, field types, and validation rules
-- Examine linked DocTypes for reference fields
-- Review permissions to ensure operations will succeed
+- Use this to understand the complete structure of a DocType, including field definitions, validation rules, permissions, and naming conventions, before attempting document operations.
+- Pay close attention to required fields, field types, and validation rules to avoid validation errors.
+- Examine linked DocTypes for reference fields to understand relationships between documents.
+- Review permissions (read, write, create, delete) to ensure your intended operations will succeed.
+- Check the 'istable' and 'issingle' properties to understand if it's a child table or a single document type.
       `,
     },
     GET_FIELD_OPTIONS: {
@@ -203,10 +209,10 @@ Example:
 }
 
 Tips:
-- For Link fields, this returns documents from the linked DocType
-- For Select fields, this returns the predefined options
-- Use filters to narrow down the options for Link fields
-- The response includes both value and label for each option
+- For Link fields, this returns documents from the linked DocType. The 'name' field of the linked document should be used as the value when setting the Link field.
+- For Select fields, this returns the predefined options. Use the exact option value when setting the Select field.
+- Use filters to narrow down the options for Link fields based on specific criteria.
+- The response includes both the value and label for each option, which can be helpful for display purposes.
       `,
     },
     FIND_DOCTYPE: {
@@ -233,10 +239,11 @@ Common filters for DocTypes:
 - name: ["like", "%User%"] (search by name)
 
 Tips:
-- Use this to discover available DocTypes in the system
-- Filter by module to find related DocTypes
-- Check istable=0 and issingle=0 for regular DocTypes
-- Check custom=1 for custom DocTypes
+- Use this to discover available DocTypes in the system and understand their basic properties (module, whether it's a table or single).
+- Filter by module to find related DocTypes within a specific application area.
+- Check istable=0 and issingle=0 for regular transactional or master DocTypes.
+- Check custom=1 for custom DocTypes created specifically for this Frappe instance.
+- Use get_doctype_schema after finding a DocType to get its detailed structure.
       `,
     },
   },
@@ -289,10 +296,11 @@ Example (Updating a child table):
 }
 
 Tips:
-- When updating, include the row "name" for existing rows
-- Rows without a "name" field will be added as new rows
-- Rows in the database but not in the update will be deleted
-- Always include all required fields for new rows
+- When updating, include the row "name" for existing rows to identify them.
+- Rows without a "name" field will be treated as new rows and added to the table.
+- Rows that exist in the database but are not included in the update array will be deleted from the table.
+- Always include all required fields for new rows to avoid validation errors.
+- Use get_doctype_schema on the child DocType to understand its structure and required fields.
       `,
     },
     HANDLING_FILE_ATTACHMENTS: {
@@ -315,10 +323,11 @@ Files in Frappe are stored as File documents. To attach a file to a document:
 2. The file will automatically be attached to the specified document
 
 Tips:
-- Use base64 encoding for the file content
-- Set is_private to 1 for private files, 0 for public files
-- The attached_to_doctype and attached_to_name fields link the file to a document
-- To get attached files, list File documents with filters for attached_to_doctype and attached_to_name
+- Use base64 encoding for the file content when providing it in the 'content' field.
+- Set is_private to 1 for private files (requiring permissions to access) and 0 for public files.
+- The attached_to_doctype and attached_to_name fields are crucial for linking the File document to its parent document.
+- To retrieve attached files for a document, list File documents using list_documents with filters on 'attached_to_doctype' and 'attached_to_name'.
+- Consider file size limits and server configuration when uploading large files.
       `,
     },
     WORKING_WITH_WORKFLOWS: {
@@ -351,10 +360,10 @@ Documents with workflows have additional fields for tracking the workflow state:
 }
 
 Tips:
-- Workflow transitions may have permission requirements
-- Some states may require additional fields to be filled
-- Workflow actions may trigger notifications or other automations
-- Check the Workflow DocType for the complete workflow definition
+- Workflow transitions may have permission requirements. Ensure the user has the necessary roles to perform a state transition.
+- Some workflow states may require additional fields to be filled or validated before a transition is allowed. Check the Workflow and DocType configurations.
+- Workflow actions can trigger notifications, field updates, or other automations. Be aware of potential side effects of state transitions.
+- Use get_document on the Workflow DocType itself to understand the complete workflow definition, including states, transitions, and permissions.
       `,
     },
   },
@@ -387,10 +396,11 @@ Common Frappe API errors and how to handle them:
    - Missing workflow transition permission
 
 Tips:
-- Always check the error message for specific details
-- Use get_doctype_schema to understand field requirements
-- Test operations with minimal data first
-- Handle errors gracefully in your application
+- Always check the error message for specific details; Frappe errors often provide clues about the cause (e.g., missing required field, permission issue).
+- Use get_doctype_schema to understand field requirements, types, and validation rules to prevent validation errors.
+- Test operations with minimal valid data first to isolate issues.
+- Implement robust error handling in your application to gracefully manage API failures and provide informative feedback to the user.
+- For permission errors, verify the API key's associated user and their roles, and check DocPerm settings for the target DocType.
       `,
     },
     EFFICIENT_QUERYING: {
@@ -404,8 +414,9 @@ Tips for efficient querying in Frappe:
   "fields": ["name", "description", "status"],
   "limit": 10
 }
+This reduces the amount of data transferred and processed, improving performance.
 
-2. Use appropriate filters to reduce result set:
+2. Use appropriate filters to reduce the result set:
 {
   "doctype": "ToDo",
   "filters": {
@@ -413,6 +424,7 @@ Tips for efficient querying in Frappe:
     "owner": "current_user"
   }
 }
+Filtering on indexed fields (like 'name', 'modified', 'creation', 'owner', 'docstatus', or fields marked 'in_standard_filter'/'in_list_view') is most efficient.
 
 3. Use pagination for large result sets:
 {
@@ -421,7 +433,7 @@ Tips for efficient querying in Frappe:
   "limit_start": 0,
   "order_by": "modified desc"
 }
-Then increment limit_start by limit for each page.
+Use 'limit' to specify the number of results per page and 'limit_start' to specify the offset. Increment 'limit_start' by 'limit' for each subsequent page. Use get_document_count to determine the total number of pages.
 
 4. Use indexed fields in filters when possible:
 - name
@@ -458,10 +470,11 @@ Frappe uses several naming conventions for documents:
    - When autoname is "custom"
 
 Tips:
-- Check the DocType's autoname field to understand its naming convention
-- Names are case-sensitive and must be unique within a DocType
-- When creating documents, you can often omit the name for auto-named DocTypes
-- For manually named DocTypes, always provide a unique name
+- Check the DocType's 'autoname' property (available via get_doctype_schema) to understand its naming convention.
+- Names are case-sensitive and must be unique within a DocType.
+- When creating documents for DocTypes with auto-naming (like 'naming_series'), you can usually omit the 'name' field, and Frappe will generate it.
+- For manually named DocTypes ('prompt' or 'field:'), you must always provide a unique 'name' when creating a document.
+- For format-based naming, understand the placeholders (YYYY, MM, DD, #####) used in the 'autoname' property.
       `,
     },
   }
