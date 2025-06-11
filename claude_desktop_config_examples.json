@@ -1,0 +1,131 @@
+{
+  "examples": {
+    "per_request_auth": {
+      "description": "Recommended setup for multi-user environments. Users provide credentials with each request.",
+      "config": {
+        "mcpServers": {
+          "frappe": {
+            "command": "npx",
+            "args": ["frappe-mcp-server"],
+            "env": {
+              "FRAPPE_URL": "http://127.0.0.1:8000"
+            },
+            "disabled": false,
+            "alwaysAllow": []
+          }
+        }
+      },
+      "usage": {
+        "note": "Users must provide api_key and api_secret with each tool call",
+        "example_tool_call": {
+          "name": "create_document",
+          "arguments": {
+            "doctype": "Customer",
+            "values": {
+              "customer_name": "John Doe",
+              "customer_type": "Individual"
+            },
+            "api_key": "your_api_key_here",
+            "api_secret": "your_api_secret_here",
+            "frappe_url": "http://127.0.0.1:8000"
+          }
+        }
+      }
+    },
+    "environment_auth": {
+      "description": "Legacy setup for single-user environments. Credentials set as environment variables.",
+      "config": {
+        "mcpServers": {
+          "frappe": {
+            "command": "npx",
+            "args": ["frappe-mcp-server"],
+            "env": {
+              "FRAPPE_URL": "http://127.0.0.1:8000",
+              "FRAPPE_API_KEY": "2e3685c514dc67f",
+              "FRAPPE_API_SECRET": "76d538faa56393e"
+            },
+            "disabled": false,
+            "alwaysAllow": []
+          }
+        }
+      },
+      "usage": {
+        "note": "No credentials needed in tool calls when environment variables are set",
+        "example_tool_call": {
+          "name": "create_document",
+          "arguments": {
+            "doctype": "Customer",
+            "values": {
+              "customer_name": "John Doe",
+              "customer_type": "Individual"
+            }
+          }
+        }
+      }
+    },
+    "mixed_auth": {
+      "description": "Hybrid setup where environment variables provide fallback, but per-request auth is also supported.",
+      "config": {
+        "mcpServers": {
+          "frappe": {
+            "command": "npx",
+            "args": ["frappe-mcp-server"],
+            "env": {
+              "FRAPPE_URL": "http://127.0.0.1:8000",
+              "FRAPPE_API_KEY": "default_api_key",
+              "FRAPPE_API_SECRET": "default_api_secret"
+            },
+            "disabled": false,
+            "alwaysAllow": []
+          }
+        }
+      },
+      "usage": {
+        "note": "Users can either use environment credentials or provide their own per-request",
+        "example_with_env": {
+          "name": "create_document",
+          "arguments": {
+            "doctype": "Customer",
+            "values": {
+              "customer_name": "John Doe (using env creds)"
+            }
+          }
+        },
+        "example_with_per_request": {
+          "name": "create_document",
+          "arguments": {
+            "doctype": "Customer",
+            "values": {
+              "customer_name": "Jane Doe (using per-request creds)"
+            },
+            "api_key": "user_specific_api_key",
+            "api_secret": "user_specific_api_secret",
+            "frappe_url": "https://different-frappe-instance.com"
+          }
+        }
+      }
+    }
+  },
+  "migration_guide": {
+    "from_environment_to_per_request": {
+      "step_1": "Remove FRAPPE_API_KEY and FRAPPE_API_SECRET from environment variables",
+      "step_2": "Keep FRAPPE_URL as default (optional)",
+      "step_3": "Update client code to include api_key and api_secret in each request",
+      "step_4": "Test with different user credentials"
+    }
+  },
+  "benefits": {
+    "per_request_auth": [
+      "No credential storage on server",
+      "Multi-user support with individual permissions",
+      "Can connect to different Frappe instances",
+      "Better security isolation",
+      "Scalable for enterprise use"
+    ],
+    "environment_auth": [
+      "Simpler setup for single-user scenarios",
+      "No need to include credentials in each request",
+      "Backward compatibility with existing setups"
+    ]
+  }
+} 
