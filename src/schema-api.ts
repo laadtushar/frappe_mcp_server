@@ -9,6 +9,11 @@ function getFrappeClient(credentials?: AuthCredentials) {
   if (credentials) {
     return createFrappeClient(credentials.apiKey, credentials.apiSecret, credentials.frappeUrl);
   }
+  
+  if (!frappe) {
+    throw new Error("No Frappe client available. Please provide API credentials in the request or set environment variables FRAPPE_API_KEY and FRAPPE_API_SECRET.");
+  }
+  
   return frappe;
 }
 
