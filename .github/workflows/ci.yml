@@ -99,16 +99,20 @@ jobs:
     - name: Test package creation
       run: |
         npm pack
-        # Check if package was created
-        if [ ! -f frappe-mcp-server-*.tgz ]; then
-          echo "Package creation failed"
+        # Check if package was created (using the actual package name)
+        PACKAGE_NAME=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).name")
+        PACKAGE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+        EXPECTED_FILE="${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz"
+        if [ ! -f "$EXPECTED_FILE" ]; then
+          echo "Package creation failed: $EXPECTED_FILE not found"
+          ls -la *.tgz || echo "No .tgz files found"
           exit 1
         fi
-        echo "Package created successfully"
+        echo "Package created successfully: $EXPECTED_FILE"
 
     - name: Upload package artifact
       uses: actions/upload-artifact@v4
       with:
         name: npm-package
-        path: frappe-mcp-server-*.tgz
+        path: "*.tgz"
         retention-days: 7 
