@@ -99,12 +99,15 @@ jobs:
     - name: Test package creation
       run: |
         npm pack
-        # Check if package was created (using the actual package name)
+        # Check if package was created (handle scoped package names)
         PACKAGE_NAME=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).name")
         PACKAGE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
-        EXPECTED_FILE="${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz"
+        # Convert scoped package name to filename format (e.g., @alsoit/frappe-mcp-server -> alsoit-frappe-mcp-server)
+        FILENAME=$(echo "$PACKAGE_NAME" | sed 's/@//' | sed 's/\//-/')
+        EXPECTED_FILE="${FILENAME}-${PACKAGE_VERSION}.tgz"
         if [ ! -f "$EXPECTED_FILE" ]; then
           echo "Package creation failed: $EXPECTED_FILE not found"
+          echo "Looking for files matching pattern:"
           ls -la *.tgz || echo "No .tgz files found"
           exit 1
         fi
