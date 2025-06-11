@@ -1,5 +1,24 @@
-import { frappe } from './api-client.js';
+import { frappe, createFrappeClient } from './api-client.js';
 import { handleApiError } from './errors.js';
+
+/**
+ * Interface for authentication credentials
+ */
+export interface AuthCredentials {
+  apiKey: string;
+  apiSecret: string;
+  frappeUrl?: string;
+}
+
+/**
+ * Get the appropriate Frappe client based on provided credentials
+ */
+function getFrappeClient(credentials?: AuthCredentials) {
+  if (credentials) {
+    return createFrappeClient(credentials.apiKey, credentials.apiSecret, credentials.frappeUrl);
+  }
+  return frappe;
+}
 
 /**
  * Verify that a document was successfully created
@@ -7,9 +26,12 @@ import { handleApiError } from './errors.js';
 async function verifyDocumentCreation(
   doctype: string,
   values: Record<string, any>,
-  creationResponse: any
+  creationResponse: any,
+  credentials?: AuthCredentials
 ): Promise<{ success: boolean; message: string }> {
   try {
+    const client = getFrappeClient(credentials);
+    
     // First check if we have a name in the response
     if (!creationResponse.name) {
       return { success: false, message: "Response does not contain a document name" };
@@ -17,7 +39,7 @@ async function verifyDocumentCreation(
 
     // Try to fetch the document directly by name
     try {
-      const document = await frappe.db().getDoc(doctype, creationResponse.name);
+      const document = await client.db().getDoc(doctype, creationResponse.name);
       if (document && document.name === creationResponse.name) {
         return { success: true, message: "Document verified by direct fetch" };
       }
@@ -40,7 +62,7 @@ async function verifyDocumentCreation(
     }
 
     if (Object.keys(filters).length > 0) {
-      const documents = await frappe.db().getDocList(doctype, {
+      const documents = await client.db().getDocList(doctype, {
         filters: filters as any[],
         limit: 5
       });
@@ -84,16 +106,18 @@ async function verifyDocumentCreation(
 async function createDocumentWithRetry(
   doctype: string,
   values: Record<string, any>,
+  credentials?: AuthCredentials,
   maxRetries = 3
 ): Promise<any> {
   let lastError;
+  const client = getFrappeClient(credentials);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await frappe.db().createDoc(doctype, values);
+      const result = await client.db().createDoc(doctype, values);
 
       // Verify document creation
-      const verificationResult = await verifyDocumentCreation(doctype, values, result);
+      const verificationResult = await verifyDocumentCreation(doctype, values, result, credentials);
       if (verificationResult.success) {
         return { ...result, _verification: verificationResult };
       }
@@ -137,7 +161,8 @@ async function logOperation(
  */
 async function createDocumentTransactional(
   doctype: string,
-  values: Record<string, any>
+  values: Record<string, any>,
+  credentials?: AuthCredentials
 ): Promise<any> {
   // 1. Create a temporary log entry to track this operation
   const operationId = `create_${doctype}_${Date.now()}`;
@@ -146,10 +171,10 @@ async function createDocumentTransactional(
     await logOperation(operationId, 'start', { doctype, values });
 
     // 2. Attempt to create the document
-    const result = await createDocumentWithRetry(doctype, values);
+    const result = await createDocumentWithRetry(doctype, values, credentials);
 
     // 3. Verify the document was created
-    const verificationResult = await verifyDocumentCreation(doctype, values, result);
+    const verificationResult = await verifyDocumentCreation(doctype, values, result, credentials);
 
     // 4. Log the operation result
     await logOperation(operationId, verificationResult.success ? 'success' : 'failure', {
@@ -173,14 +198,16 @@ async function createDocumentTransactional(
 export async function getDocument(
   doctype: string,
   name: string,
-  fields?: string[]
+  fields?: string[],
+  credentials?: AuthCredentials
 ): Promise<any> {
   if (!doctype) throw new Error("DocType is required");
   if (!name) throw new Error("Document name is required");
 
+  const client = getFrappeClient(credentials);
   const fieldsParam = fields ? `?fields=${JSON.stringify(fields)}` : "";
   try {
-    const response = await frappe.db().getDoc(
+    const response = await client.db().getDoc(
       doctype,
       name
     );
@@ -197,39 +224,41 @@ export async function getDocument(
 
 export async function createDocument(
   doctype: string,
-  values: Record<string, any>
+  values: Record<string, any>,
+  credentials?: AuthCredentials
 ): Promise<any> {
+  if (!doctype) throw new Error("DocType is required");
+  if (!values || Object.keys(values).length === 0) {
+    throw new Error("Document values are required");
+  }
+
+  console.error(`Creating document of type ${doctype} with values:`, JSON.stringify(values, null, 2));
+
   try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!values || Object.keys(values).length === 0) {
-      throw new Error("Document values are required");
-    }
-
-    const response = await frappe.db().createDoc(doctype, values);
-
-    if (!response) {
-      throw new Error(`Invalid response format for creating ${doctype}`);
-    }
-
-    return response;
+    const result = await createDocumentTransactional(doctype, values, credentials);
+    console.error(`Create document response:`, JSON.stringify(result, null, 2));
+    return result;
   } catch (error) {
-    handleApiError(error, `create_document(${doctype})`);
+    console.error(`Error in createDocument:`, error);
+    return handleApiError(error, `create_document(${doctype})`);
   }
 }
 
 export async function updateDocument(
   doctype: string,
   name: string,
-  values: Record<string, any>
+  values: Record<string, any>,
+  credentials?: AuthCredentials
 ): Promise<any> {
-  try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!name) throw new Error("Document name is required");
-    if (!values || Object.keys(values).length === 0) {
-      throw new Error("Update values are required");
-    }
+  if (!doctype) throw new Error("DocType is required");
+  if (!name) throw new Error("Document name is required");
+  if (!values || Object.keys(values).length === 0) {
+    throw new Error("Document values are required");
+  }
 
-    const response = await frappe.db().updateDoc(doctype, name, values);
+  const client = getFrappeClient(credentials);
+  try {
+    const response = await client.db().updateDoc(doctype, name, values);
 
     if (!response) {
       throw new Error(`Invalid response format for updating ${doctype}/${name}`);
@@ -243,19 +272,16 @@ export async function updateDocument(
 
 export async function deleteDocument(
   doctype: string,
-  name: string
+  name: string,
+  credentials?: AuthCredentials
 ): Promise<any> {
+  if (!doctype) throw new Error("DocType is required");
+  if (!name) throw new Error("Document name is required");
+
+  const client = getFrappeClient(credentials);
   try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!name) throw new Error("Document name is required");
-
-    const response = await frappe.db().deleteDoc(doctype, name);
-
-    if (!response) {
-      return response;
-    }
+    const response = await client.db().deleteDoc(doctype, name);
     return response;
-
   } catch (error) {
     handleApiError(error, `delete_document(${doctype}, ${name})`);
   }
@@ -267,70 +293,57 @@ export async function listDocuments(
   fields?: string[],
   limit?: number,
   order_by?: string,
-  limit_start?: number
+  limit_start?: number,
+  credentials?: AuthCredentials
 ): Promise<any[]> {
+  if (!doctype) throw new Error("DocType is required");
+
+  const client = getFrappeClient(credentials);
   try {
-    if (!doctype) throw new Error("DocType is required");
+    const options: any = {};
 
-    const params: Record<string, string> = {};
+    if (filters) {
+      options.filters = filters;
+    }
 
-    if (filters) params.filters = JSON.stringify(filters);
-    if (fields) params.fields = JSON.stringify(fields);
-    if (limit !== undefined) params.limit = limit.toString();
-    if (order_by) params.order_by = order_by;
-    if (limit_start !== undefined) params.limit_start = limit_start.toString();
+    if (fields) {
+      options.fields = fields;
+    }
 
-    let orderByOption: { field: string; order?: "asc" | "desc" } | undefined = undefined;
+    if (limit) {
+      options.limit = limit;
+    }
+
     if (order_by) {
-      const parts = order_by.trim().split(/\s+/);
-      const field = parts[0];
-      const order = parts[1]?.toLowerCase() === "desc" ? "desc" : "asc";
-      orderByOption = { field, order };
+      options.order_by = order_by;
     }
 
-    const optionsForGetDocList = {
-      fields: fields,
-      filters: filters as any[],
-      orderBy: orderByOption,
-      limit_start: limit_start,
-      limit: limit
-    };
-
-    try {
-      const response = await frappe.db().getDocList(doctype, optionsForGetDocList as any); // Cast to any to resolve complex type issue for now, focusing on runtime
-
-      if (!response) {
-        throw new Error(`Invalid response format for listing ${doctype}`);
-      }
-
-      return response;
-    } catch (sdkError) {
-      // Re-throw the error to be handled by the existing handleApiError
-      throw sdkError;
+    if (limit_start) {
+      options.limit_start = limit_start;
     }
+
+    const response = await client.db().getDocList(doctype, options);
+
+    if (!Array.isArray(response)) {
+      throw new Error(`Invalid response format for listing ${doctype} documents`);
+    }
+
+    return response;
   } catch (error) {
     handleApiError(error, `list_documents(${doctype})`);
   }
 }
 
-/**
- * Execute a Frappe method call
- * @param method The method name to call
- * @param params The parameters to pass to the method
- * @returns The method response
- */
 export async function callMethod(
   method: string,
-  params?: Record<string, any>
+  params?: Record<string, any>,
+  credentials?: AuthCredentials
 ): Promise<any> {
+  if (!method) throw new Error("Method name is required");
+
+  const client = getFrappeClient(credentials);
   try {
-    if (!method) throw new Error("Method name is required");
-
-    const response = await frappe.call().post(method, params);
-
-    if (!response) {
-      throw new Error(`Invalid response format for method ${method}`);
-    }
+    const response = await client.call().post(method, params || {});
 
     return response;
   } catch (error) {

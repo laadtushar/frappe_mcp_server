@@ -1,4 +1,5 @@
-import { frappe } from './api-client.js';
+import { frappe, createFrappeClient } from './api-client.js';
+import { AuthCredentials } from './document-api.js';
 
 // Authentication state tracking
 let isAuthenticated = false;
@@ -45,10 +46,47 @@ export function validateApiCredentials(): {
 }
 
 /**
+ * Validates per-request API credentials
+ * @param credentials The credentials to validate
+ * @returns Object indicating if credentials are valid with detailed message
+ */
+export function validatePerRequestCredentials(credentials: AuthCredentials): {
+  valid: boolean;
+  message: string;
+} {
+  if (!credentials.apiKey && !credentials.apiSecret) {
+    return {
+      valid: false,
+      message: "Authentication failed: Both API key and API secret are missing in request."
+    };
+  }
+  
+  if (!credentials.apiKey) {
+    return {
+      valid: false,
+      message: "Authentication failed: API key is missing in request."
+    };
+  }
+  
+  if (!credentials.apiSecret) {
+    return {
+      valid: false,
+      message: "Authentication failed: API secret is missing in request."
+    };
+  }
+  
+  return {
+    valid: true,
+    message: "Per-request API credentials validation successful."
+  };
+}
+
+/**
  * Check the health of the Frappe API connection
+ * @param credentials Optional per-request credentials
  * @returns Health status information
  */
-export async function checkFrappeApiHealth(): Promise<{
+export async function checkFrappeApiHealth(credentials?: AuthCredentials): Promise<{
   healthy: boolean;
   tokenAuth: boolean;
   message: string;
@@ -59,8 +97,14 @@ export async function checkFrappeApiHealth(): Promise<{
     message: ""
   };
 
-  // First validate credentials
-  const credentialsCheck = validateApiCredentials();
+  // Validate credentials (either per-request or environment)
+  let credentialsCheck;
+  if (credentials) {
+    credentialsCheck = validatePerRequestCredentials(credentials);
+  } else {
+    credentialsCheck = validateApiCredentials();
+  }
+  
   if (!credentialsCheck.valid) {
     result.message = credentialsCheck.message;
     console.error(`API Health Check: ${result.message}`);
@@ -71,7 +115,8 @@ export async function checkFrappeApiHealth(): Promise<{
     // Try token authentication
     try {
       console.error("Attempting token authentication health check...");
-      const tokenResponse = await frappe.db().getDocList("DocType", { limit: 1 });
+      const client = credentials ? createFrappeClient(credentials.apiKey, credentials.apiSecret, credentials.frappeUrl) : frappe;
+      const tokenResponse = await client.db().getDocList("DocType", { limit: 1 });
       result.tokenAuth = true;
       console.error("Token authentication health check successful");
     } catch (tokenError) {
@@ -82,7 +127,7 @@ export async function checkFrappeApiHealth(): Promise<{
     // Set overall health status
     result.healthy = result.tokenAuth;
     result.message = result.healthy
-      ? `API connection healthy. Token auth: ${result.tokenAuth}`
+      ? `API connection healthy. Token auth: ${result.tokenAuth}. Using ${credentials ? 'per-request' : 'environment'} credentials.`
       : "API connection unhealthy. Token authentication failed. Please ensure your API key and secret are correct.";
 
     return result;

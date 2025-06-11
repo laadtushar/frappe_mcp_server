@@ -14,6 +14,7 @@ import {
   getAllDocTypes,
   getAllModules
 } from "./frappe-api.js";
+import { AuthCredentials } from "./document-api.js";
 import { formatFilters } from "./frappe-helpers.js";
 import {
   getDocTypeHints,
@@ -28,7 +29,7 @@ import {
   initializeAppIntrospection
 } from "./app-introspection.js";
 
-// Define schema tools
+// Define schema tools with API credentials
 export const SCHEMA_TOOLS = [
   {
     name: "get_doctype_schema",
@@ -36,9 +37,12 @@ export const SCHEMA_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        doctype: { type: "string", description: "DocType name" }
+        doctype: { type: "string", description: "DocType name" },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype"]
+      required: ["doctype", "api_key", "api_secret"]
     }
   },
   {
@@ -53,9 +57,12 @@ export const SCHEMA_TOOLS = [
           type: "object",
           description: "Filters to apply to the linked DocType (optional, for Link fields only)",
           additionalProperties: true
-        }
+        },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype", "fieldname"]
+      required: ["doctype", "fieldname", "api_key", "api_secret"]
     }
   },
   {
@@ -65,9 +72,12 @@ export const SCHEMA_TOOLS = [
       type: "object",
       properties: {
         doctype: { type: "string", description: "DocType name (optional if workflow is provided)" },
-        workflow: { type: "string", description: "Workflow name (optional if doctype is provided)" }
+        workflow: { type: "string", description: "Workflow name (optional if doctype is provided)" },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: []
+      required: ["api_key", "api_secret"]
     }
   }
 ];
@@ -75,18 +85,33 @@ export const SCHEMA_TOOLS = [
 /**
  * Format error response with detailed information
  */
-function formatErrorResponse(error: any, operation: string): any {
+function formatErrorResponse(error: any, operation: string, credentials?: AuthCredentials): any {
   console.error(`Error in ${operation}:`, error);
+
+  // Include authentication context in error details
+  const apiKey = credentials?.apiKey || process.env.FRAPPE_API_KEY;
+  const apiSecret = credentials?.apiSecret || process.env.FRAPPE_API_SECRET;
 
   let errorMessage = `Error in ${operation}: ${error.message || 'Unknown error'}`;
   let errorDetails = null;
 
-  if (error instanceof FrappeApiError) {
+  // Check for missing credentials first
+  if (!apiKey || !apiSecret) {
+    errorMessage = `Authentication failed: ${!apiKey && !apiSecret ? 'Both API key and API secret are missing' :
+                    !apiKey ? 'API key is missing' : 'API secret is missing'}. Please provide API credentials in the request or set environment variables.`;
+    errorDetails = {
+      error: "Missing credentials",
+      apiKeyAvailable: !!apiKey,
+      apiSecretAvailable: !!apiSecret,
+      perRequestAuth: !!credentials
+    };
+  } else if (error instanceof FrappeApiError) {
     errorMessage = error.message;
     errorDetails = {
       statusCode: error.statusCode,
       endpoint: error.endpoint,
-      details: error.details
+      details: error.details,
+      perRequestAuth: !!credentials
     };
   }
 
@@ -123,6 +148,13 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
     };
   }
 
+  // Extract credentials from arguments
+  const credentials: AuthCredentials | undefined = args.api_key && args.api_secret ? {
+    apiKey: args.api_key,
+    apiSecret: args.api_secret,
+    frappeUrl: args.frappe_url
+  } : undefined;
+
   try {
     console.error(`Handling schema tool: ${name} with args:`, args);
 
@@ -140,14 +172,25 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
         };
       }
 
+      if (!credentials) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Missing required authentication: api_key and api_secret are required",
+            },
+          ],
+          isError: true,
+        };
+      }
+
       try {
         let schema;
-        let authMethod = "token";
+        let authMethod = "per-request";
 
-        // Get schema using API key/secret authentication
-        schema = await getDocTypeSchema(doctype);
-        console.error(`Retrieved schema for ${doctype} using API key/secret auth`);
-        authMethod = "api_key";
+        // Get schema using per-request authentication
+        schema = await getDocTypeSchema(doctype, credentials);
+        console.error(`Retrieved schema for ${doctype} using per-request auth`);
 
         // Add a summary of the schema for easier understanding
         const fieldTypes = schema.fields.reduce((acc: Record<string, number>, field: any) => {
@@ -182,7 +225,7 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
           ],
         };
       } catch (error) {
-        return formatErrorResponse(error, `get_doctype_schema(${doctype})`);
+        return formatErrorResponse(error, `get_doctype_schema(${doctype})`, credentials);
       }
     } else if (name === "get_field_options") {
       const doctype = args.doctype as string;
@@ -200,49 +243,36 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
         };
       }
 
-      const filters = args.filters as Record<string, any> | undefined;
-      const formattedFilters = filters ? formatFilters(filters) : undefined;
+      if (!credentials) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Missing required authentication: api_key and api_secret are required",
+            },
+          ],
+          isError: true,
+        };
+      }
 
       try {
-        // First get the field metadata to understand what we're dealing with
-        const schema = await getDocTypeSchema(doctype);
-        const field = schema.fields.find((f: any) => f.fieldname === fieldname);
+        const filters = args.filters as Record<string, any> | undefined;
+        let authMethod = "per-request";
 
-        if (!field) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Field ${fieldname} not found in DocType ${doctype}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // Get the options
-        const options = await getFieldOptions(doctype, fieldname, formattedFilters);
-
-        // Add field metadata to the response
-        const fieldInfo = {
-          fieldname: field.fieldname,
-          label: field.label,
-          fieldtype: field.fieldtype,
-          required: field.required,
-          description: field.description,
-          options: field.options,
-        };
+        // Get field options using per-request authentication
+        const options = await getFieldOptions(doctype, fieldname, filters, credentials);
+        console.error(`Retrieved field options for ${doctype}.${fieldname} using per-request auth`);
 
         return {
           content: [
             {
               type: "text",
-              text: `Field Information:\n${JSON.stringify(fieldInfo, null, 2)}\n\nAvailable Options (${options.length}):\n${JSON.stringify(options, null, 2)}`,
+              text: `Field options for ${doctype}.${fieldname} (retrieved using ${authMethod} authentication):\n\n${JSON.stringify(options, null, 2)}`,
             },
           ],
         };
       } catch (error) {
-        return formatErrorResponse(error, `get_field_options(${doctype}, ${fieldname})`);
+        return formatErrorResponse(error, `get_field_options(${doctype}, ${fieldname})`, credentials);
       }
     } else if (name === "get_frappe_usage_info") {
       const doctype = args.doctype as string;
@@ -253,7 +283,19 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
           content: [
             {
               type: "text",
-              text: "Missing required parameters: either doctype or workflow must be provided",
+              text: "At least one of doctype or workflow must be provided",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      if (!credentials) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Missing required authentication: api_key and api_secret are required",
             },
           ],
           isError: true,
@@ -261,184 +303,52 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
       }
 
       try {
-        // Initialize result object
-        const result: any = {
-          type: doctype ? "doctype" : "workflow",
-          name: doctype || workflow,
-          schema: null,
-          hints: [],
-          related_workflows: [],
-          app_instructions: null
-        };
+        let result: any = {};
+        let authMethod = "per-request";
 
-        // If doctype is provided, get the schema, doctype hints, and app instructions
         if (doctype) {
-          try {
-            // Get schema
-            result.schema = await getDocTypeSchema(doctype);
-            
-            // Get static hints
-            result.hints = getDocTypeHints(doctype);
-            result.related_workflows = findWorkflowsForDocType(doctype);
-            
-            // Get app-provided instructions
-            result.app_instructions = await getDocTypeUsageInstructions(doctype);
-            
-            // If no app instructions but we have the app name, try to get app-level instructions
-            if (!result.app_instructions) {
-              const appName = await getAppForDocType(doctype);
-              if (appName) {
-                result.app_name = appName;
-                result.app_level_instructions = await getAppUsageInstructions(appName);
-              }
-            }
-          } catch (error) {
-            console.error(`Error getting schema for DocType ${doctype}:`, error);
-            // Continue even if schema retrieval fails, we can still provide hints
-            result.schema_error = `Error retrieving schema: ${(error as Error).message}`;
+          // Get DocType schema using per-request authentication
+          const schema = await getDocTypeSchema(doctype, credentials);
+          result.schema = schema;
+
+          // Get static hints (these don't require authentication)
+          const hints = await getDocTypeHints(doctype);
+          result.hints = hints;
+
+          // Get app-specific usage instructions (these don't require authentication)
+          const app = await getAppForDocType(doctype);
+          if (app) {
+            const appInstructions = await getAppUsageInstructions(app);
+            result.appInstructions = appInstructions;
           }
-        } else if (workflow) {
-          // If workflow is provided, get the workflow hints
-          result.hints = getWorkflowHints(workflow);
+
+          // Get DocType-specific usage instructions (these don't require authentication)
+          const usageInstructions = await getDocTypeUsageInstructions(doctype);
+          result.usageInstructions = usageInstructions;
+
+          // Find workflows for this DocType (these don't require authentication)
+          const workflows = await findWorkflowsForDocType(doctype);
+          if (workflows.length > 0) {
+            result.workflows = workflows;
+          }
         }
 
-        // Format the response
-        let responseText = "";
-
-        if (doctype) {
-          responseText += `# DocType: ${doctype}\n\n`;
-          
-          // Add app-provided instructions if available
-          if (result.app_instructions) {
-            const instructions = result.app_instructions.instructions;
-            
-            responseText += "## App-Provided Usage Information\n\n";
-            
-            if (instructions.description) {
-              responseText += `### Description\n\n${instructions.description}\n\n`;
-            }
-            
-            if (instructions.usage_guidance) {
-              responseText += `### Usage Guidance\n\n${instructions.usage_guidance}\n\n`;
-            }
-            
-            if (instructions.key_fields && instructions.key_fields.length > 0) {
-              responseText += "### Key Fields\n\n";
-              for (const field of instructions.key_fields) {
-                responseText += `- **${field.name}**: ${field.description}\n`;
-              }
-              responseText += "\n";
-            }
-            
-            if (instructions.common_workflows && instructions.common_workflows.length > 0) {
-              responseText += "### Common Workflows\n\n";
-              instructions.common_workflows.forEach((workflow: string, index: number) => {
-                responseText += `${index + 1}. ${workflow}\n`;
-              });
-              responseText += "\n";
-            }
-          }
-          
-          // Add static hints if available
-          if (result.hints && result.hints.length > 0) {
-            responseText += "## Static Hints\n\n";
-            for (const hint of result.hints) {
-              responseText += `${hint.hint}\n\n`;
-            }
-          }
-          
-          // If no specific instructions were found, but we have app-level instructions
-          if (!result.app_instructions && result.app_level_instructions) {
-            responseText += `## About ${result.app_name}\n\n`;
-            
-            const appInstructions = result.app_level_instructions;
-            
-            if (appInstructions.app_description) {
-              responseText += `${appInstructions.app_description}\n\n`;
-            }
-            
-            // Add a note that this DocType is part of this app
-            responseText += `The DocType "${doctype}" is part of the ${result.app_name} app.\n\n`;
-          }
-          
-          // Add schema summary if available
-          if (result.schema) {
-            const fieldTypes = result.schema.fields.reduce((acc: Record<string, number>, field: any) => {
-              acc[field.fieldtype] = (acc[field.fieldtype] || 0) + 1;
-              return acc;
-            }, {});
-
-            const requiredFields = result.schema.fields
-              .filter((field: any) => field.required)
-              .map((field: any) => field.fieldname);
-
-            responseText += "## Schema Summary\n\n";
-            responseText += `- **Module**: ${result.schema.module}\n`;
-            responseText += `- **Is Single**: ${result.schema.issingle ? "Yes" : "No"}\n`;
-            responseText += `- **Is Table**: ${result.schema.istable ? "Yes" : "No"}\n`;
-            responseText += `- **Is Custom**: ${result.schema.custom ? "Yes" : "No"}\n`;
-            responseText += `- **Field Count**: ${result.schema.fields.length}\n`;
-            responseText += `- **Field Types**: ${JSON.stringify(fieldTypes)}\n`;
-            responseText += `- **Required Fields**: ${requiredFields.join(", ")}\n\n`;
-          } else if (result.schema_error) {
-            responseText += `## Schema Error\n\n${result.schema_error}\n\n`;
-          }
-          
-          // Add related workflows if available
-          if (result.related_workflows && result.related_workflows.length > 0) {
-            responseText += "## Related Workflows\n\n";
-            for (const workflow of result.related_workflows) {
-              responseText += `### ${workflow.target}\n\n`;
-              if (workflow.description) {
-                responseText += `${workflow.description}\n\n`;
-              }
-              if (workflow.steps && workflow.steps.length > 0) {
-                responseText += "Steps:\n";
-                workflow.steps.forEach((step: string, index: number) => {
-                  responseText += `${index + 1}. ${step}\n`;
-                });
-                responseText += "\n";
-              }
-            }
-          }
-        } else if (workflow) {
-          responseText += `# Workflow: ${workflow}\n\n`;
-          
-          // Add workflow hints if available
-          if (result.hints && result.hints.length > 0) {
-            for (const hint of result.hints) {
-              if (hint.description) {
-                responseText += `## Description\n\n${hint.description}\n\n`;
-              }
-              
-              if (hint.steps && hint.steps.length > 0) {
-                responseText += "## Steps\n\n";
-                hint.steps.forEach((step: string, index: number) => {
-                  responseText += `${index + 1}. ${step}\n`;
-                });
-                responseText += "\n";
-              }
-              
-              if (hint.related_doctypes && hint.related_doctypes.length > 0) {
-                responseText += "## Related DocTypes\n\n";
-                responseText += hint.related_doctypes.join(", ") + "\n\n";
-              }
-            }
-          } else {
-            responseText += "No workflow information available.\n";
-          }
+        if (workflow) {
+          // Get workflow hints (these don't require authentication)
+          const workflowHints = await getWorkflowHints(workflow);
+          result.workflowHints = workflowHints;
         }
 
         return {
           content: [
             {
               type: "text",
-              text: responseText,
+              text: `Frappe usage information (retrieved using ${authMethod} authentication):\n\n${JSON.stringify(result, null, 2)}`,
             },
           ],
         };
       } catch (error) {
-        return formatErrorResponse(error, `get_frappe_usage_info(${doctype || workflow})`);
+        return formatErrorResponse(error, `get_frappe_usage_info(${doctype || workflow})`, credentials);
       }
     }
 
@@ -446,13 +356,13 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
       content: [
         {
           type: "text",
-          text: `Schema operations module doesn't handle tool: ${name}`,
+          text: `Unknown schema tool: ${name}`,
         },
       ],
       isError: true,
     };
   } catch (error) {
-    return formatErrorResponse(error, `schema_operations.${name}`);
+    return formatErrorResponse(error, `schema_operations.${name}`, credentials);
   }
 }
 

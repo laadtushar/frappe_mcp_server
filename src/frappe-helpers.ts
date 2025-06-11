@@ -5,6 +5,7 @@
 
 import axios, { AxiosError } from "axios";
 import { getDocument, listDocuments, getDocTypeSchema } from "./frappe-api.js";
+import { AuthCredentials } from "./document-api.js";
 
 /**
  * Error class for Frappe API errors with improved details
@@ -312,11 +313,12 @@ export async function getFieldMetadata(doctype: string, fieldname: string): Prom
 /**
  * Get required fields for a DocType
  * @param doctype The DocType name
+ * @param credentials Optional authentication credentials
  * @returns Array of required field names and their metadata
  */
-export async function getRequiredFields(doctype: string): Promise<any[]> {
+export async function getRequiredFields(doctype: string, credentials?: AuthCredentials): Promise<any[]> {
   try {
-    const schema = await getDocTypeSchema(doctype);
+    const schema = await getDocTypeSchema(doctype, credentials);
     
     if (!schema || !schema.fields) {
       throw new Error(`Could not get schema for DocType ${doctype}`);

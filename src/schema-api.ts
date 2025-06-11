@@ -1,22 +1,35 @@
-import { frappe } from './api-client.js';
+import { frappe, createFrappeClient } from './api-client.js';
 import { handleApiError } from './errors.js';
-import { getDocument } from './document-api.js';
+import { getDocument, AuthCredentials } from './document-api.js';
+
+/**
+ * Get the appropriate Frappe client based on provided credentials
+ */
+function getFrappeClient(credentials?: AuthCredentials) {
+  if (credentials) {
+    return createFrappeClient(credentials.apiKey, credentials.apiSecret, credentials.frappeUrl);
+  }
+  return frappe;
+}
 
 // Schema operations
 /**
  * Get the schema for a DocType
  * @param doctype The DocType name
+ * @param credentials Optional authentication credentials
  * @returns The DocType schema
  */
-export async function getDocTypeSchema(doctype: string): Promise<any> {
+export async function getDocTypeSchema(doctype: string, credentials?: AuthCredentials): Promise<any> {
   try {
     if (!doctype) throw new Error("DocType name is required");
+
+    const client = getFrappeClient(credentials);
 
     // Primary approach: Use the standard API endpoint
     console.error(`Using standard API endpoint for ${doctype}`);
     let response;
     try {
-      response = await frappe.call().get('frappe.get_meta', { doctype: doctype });
+      response = await client.call().get('frappe.get_meta', { doctype: doctype });
       console.error(`Got response from standard API endpoint for ${doctype}`);
       console.error(`Raw response data:`, JSON.stringify(response?.data, null, 2));
     } catch (error) {
@@ -99,7 +112,7 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
 
       // 1. Get the DocType document
       console.error(`Fetching DocType document for ${doctype}`);
-      const doctypeDoc = await getDocument("DocType", doctype);
+      const doctypeDoc = await getDocument("DocType", doctype, undefined, credentials);
       console.error(`DocType document response:`, JSON.stringify(doctypeDoc).substring(0, 200) + "...");
       console.error(`Full DocType document response:`, doctypeDoc);
 
@@ -151,14 +164,17 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
 export async function getFieldOptions(
   doctype: string,
   fieldname: string,
-  filters?: Record<string, any>
+  filters?: Record<string, any>,
+  credentials?: AuthCredentials
 ): Promise<Array<{ value: string; label: string }>> {
   try {
     if (!doctype) throw new Error("DocType name is required");
     if (!fieldname) throw new Error("Field name is required");
 
+    const client = getFrappeClient(credentials);
+
     // First get the field metadata to determine the type and linked DocType
-    const schema = await getDocTypeSchema(doctype);
+    const schema = await getDocTypeSchema(doctype, credentials);
 
     if (!schema || !schema.fields || !Array.isArray(schema.fields)) {
       throw new Error(`Invalid schema returned for DocType ${doctype}`);
@@ -181,11 +197,11 @@ export async function getFieldOptions(
 
       try {
         // Try to get the title field for the linked DocType
-        const linkedSchema = await getDocTypeSchema(linkedDocType);
+        const linkedSchema = await getDocTypeSchema(linkedDocType, credentials);
         const titleField = linkedSchema.fields.find((f: any) => f.fieldname === "title" || f.bold === 1);
         const displayFields = titleField ? ["name", titleField.fieldname] : ["name"];
 
-        const response = await frappe.db().getDocList(linkedDocType, { limit: 50, fields: displayFields, filters: filters as any });
+        const response = await client.db().getDocList(linkedDocType, { limit: 50, fields: displayFields, filters: filters as any });
 
         if (!response) {
           throw new Error(`Invalid response for DocType ${linkedDocType}`);
@@ -202,79 +218,64 @@ export async function getFieldOptions(
           };
         });
       } catch (error) {
-        console.error(`Error fetching options for Link field ${fieldname}:`, error);
-        // Try a simpler approach as fallback
-        const response = await frappe.db().getDocList(linkedDocType, { limit: 50, fields: ["name"], filters: filters as any });
-
-        if (!response) {
-          throw new Error(`Invalid response for DocType ${linkedDocType}`);
-        }
-
-        return response.map((item: any) => ({
-          value: item.name,
-          label: item.name,
-        }));
+        console.error(`Error getting options for Link field ${fieldname}:`, error);
+        throw error;
       }
     } else if (field.fieldtype === "Select") {
       // For Select fields, parse the options string
-      console.error(`Getting options for Select field ${fieldname}: ${field.options}`);
-
       if (!field.options) {
         return [];
       }
 
-      return field.options.split("\n")
-        .filter((option: string) => option.trim() !== '')
-        .map((option: string) => ({
-          value: option.trim(),
-          label: option.trim(),
-        }));
-    } else if (field.fieldtype === "Table") {
-      // For Table fields, return an empty array with a message
-      console.error(`Field ${fieldname} is a Table field, no options available`);
-      return [];
+      const options = field.options.split('\n').filter((option: string) => option.trim() !== '');
+      return options.map((option: string) => ({
+        value: option.trim(),
+        label: option.trim(),
+      }));
     } else {
-      console.error(`Field ${fieldname} is type ${field.fieldtype}, not Link or Select`);
-      return [];
+      throw new Error(`Field type ${field.fieldtype} does not support options`);
     }
   } catch (error) {
-    console.error(`Error in getFieldOptions for ${doctype}.${fieldname}:`, error);
     return handleApiError(error, `get_field_options(${doctype}, ${fieldname})`);
   }
 }
 
 /**
  * Get a list of all DocTypes in the system
+ * @param credentials Optional authentication credentials
  * @returns Array of DocType names
  */
-export async function getAllDocTypes(): Promise<string[]> {
+export async function getAllDocTypes(credentials?: AuthCredentials): Promise<string[]> {
   try {
-    const response = await frappe.db().getDocList('DocType', { limit: 1000, fields: ["name"] });
+    const client = getFrappeClient(credentials);
+    const response = await client.db().getDocList("DocType", { fields: ["name"], limit: 1000 });
 
     if (!response) {
-      throw new Error('Invalid response format for DocType list');
+      throw new Error("Invalid response for DocType list");
     }
 
     return response.map((item: any) => item.name);
   } catch (error) {
-    return handleApiError(error, 'get_all_doctypes');
+    return handleApiError(error, "get_all_doctypes()");
   }
 }
 
 /**
  * Get a list of all modules in the system
+ * @param credentials Optional authentication credentials
  * @returns Array of module names
  */
-export async function getAllModules(): Promise<string[]> {
+export async function getAllModules(credentials?: AuthCredentials): Promise<string[]> {
   try {
-    const response = await frappe.db().getDocList('Module Def', { limit: 100, fields: ["name", "module_name"] });
+    const client = getFrappeClient(credentials);
+    const response = await client.db().getDocList("Module Def", { fields: ["name"], limit: 1000 });
 
     if (!response) {
-      throw new Error('Invalid response format for Module list');
+      throw new Error("Invalid response for Module list");
     }
 
-    return response.map((item: any) => item.name || item.module_name);
+    return response.map((item: any) => item.name);
   } catch (error) {
-    return handleApiError(error, 'get_all_modules');
+    return handleApiError(error, "get_all_modules()");
   }
 }

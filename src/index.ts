@@ -17,14 +17,15 @@ async function main() {
   console.error("Starting Frappe MCP server...");
   console.error("Current working directory:", process.cwd());
 
-  // Validate API credentials at startup
+  // Check if environment credentials are available (optional now)
   const credentialsCheck = validateApiCredentials();
   if (!credentialsCheck.valid) {
-    console.error(`ERROR: ${credentialsCheck.message}`);
-    console.error("The server will start, but most operations will fail without valid API credentials.");
-    console.error("Please set FRAPPE_API_KEY and FRAPPE_API_SECRET environment variables.");
+    console.error(`INFO: ${credentialsCheck.message}`);
+    console.error("The server supports per-request authentication. Users can provide API credentials with each request.");
+    console.error("Environment variables FRAPPE_API_KEY and FRAPPE_API_SECRET are optional but can be used as fallback.");
   } else {
-    console.error("API credentials validation successful.");
+    console.error("Environment API credentials available and can be used as fallback.");
+    console.error("The server also supports per-request authentication where users provide credentials with each request.");
   }
 
   const server = new Server(

@@ -12,16 +12,17 @@ import {
   listDocuments,
   FrappeApiError
 } from "./frappe-api.js";
+import { AuthCredentials } from "./document-api.js";
 import { getRequiredFields, formatFilters } from "./frappe-helpers.js";
 import { FRAPPE_INSTRUCTIONS } from "./frappe-instructions.js";
 
 /**
  * Format error response with detailed information
  */
-function formatErrorResponse(error: any, operation: string): any {
+function formatErrorResponse(error: any, operation: string, credentials?: AuthCredentials): any {
   // Include all error diagnostics directly in the response
-  const apiKey = process.env.FRAPPE_API_KEY;
-  const apiSecret = process.env.FRAPPE_API_SECRET;
+  const apiKey = credentials?.apiKey || process.env.FRAPPE_API_KEY;
+  const apiSecret = credentials?.apiSecret || process.env.FRAPPE_API_SECRET;
   
   // Build a detailed diagnostic message
   let diagnostics = [
@@ -31,7 +32,8 @@ function formatErrorResponse(error: any, operation: string): any {
     `Is FrappeApiError: ${error instanceof FrappeApiError}`,
     `Error properties: ${Object.keys(error).join(', ')}`,
     `API Key available: ${!!apiKey}`,
-    `API Secret available: ${!!apiSecret}`
+    `API Secret available: ${!!apiSecret}`,
+    `Using per-request auth: ${!!credentials}`
   ].join('\n');
   
   let errorMessage = '';
@@ -40,12 +42,13 @@ function formatErrorResponse(error: any, operation: string): any {
   // Check for missing credentials first as this is likely the issue
   if (!apiKey || !apiSecret) {
     errorMessage = `Authentication failed: ${!apiKey && !apiSecret ? 'Both API key and API secret are missing' :
-                    !apiKey ? 'API key is missing' : 'API secret is missing'}. API key/secret is the only supported authentication method.`;
+                    !apiKey ? 'API key is missing' : 'API secret is missing'}. Please provide API credentials in the request or set environment variables.`;
     errorDetails = {
       error: "Missing credentials",
       apiKeyAvailable: !!apiKey,
       apiSecretAvailable: !!apiSecret,
       authMethod: "API key/secret (token)",
+      perRequestAuth: !!credentials,
       diagnostics: diagnostics
     };
   }
@@ -113,9 +116,9 @@ function formatErrorResponse(error: any, operation: string): any {
 /**
  * Validate document values against required fields
  */
-async function validateDocumentValues(doctype: string, values: Record<string, any>): Promise<string[]> {
+async function validateDocumentValues(doctype: string, values: Record<string, any>, credentials?: AuthCredentials): Promise<string[]> {
   try {
-    const requiredFields = await getRequiredFields(doctype);
+    const requiredFields = await getRequiredFields(doctype, credentials);
     const missingFields = requiredFields
       .filter(field => !values.hasOwnProperty(field.fieldname))
       .map(field => field.fieldname);
@@ -127,7 +130,7 @@ async function validateDocumentValues(doctype: string, values: Record<string, an
   }
 }
 
-// Define document tools
+// Define document tools with API credentials
 export const DOCUMENT_TOOLS = [
   {
     name: "create_document",
@@ -141,8 +144,11 @@ export const DOCUMENT_TOOLS = [
           description: "Document field values. Required fields must be included. For Link fields, provide the exact document name. For Table fields, provide an array of row objects.",
           additionalProperties: true
         },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype", "values"],
+      required: ["doctype", "values", "api_key", "api_secret"],
     },
   },
   {
@@ -158,8 +164,11 @@ export const DOCUMENT_TOOLS = [
           items: { type: "string" },
           description: "Fields to retrieve (optional). If not specified, all fields will be returned.",
         },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype", "name"],
+      required: ["doctype", "name", "api_key", "api_secret"],
     },
   },
   {
@@ -175,8 +184,11 @@ export const DOCUMENT_TOOLS = [
           description: "Document field values to update. Only include fields that need to be updated. For Table fields, provide the entire table data including row IDs for existing rows.",
           additionalProperties: true
         },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype", "name", "values"],
+      required: ["doctype", "name", "values", "api_key", "api_secret"],
     },
   },
   {
@@ -187,8 +199,11 @@ export const DOCUMENT_TOOLS = [
       properties: {
         doctype: { type: "string", description: "DocType name" },
         name: { type: "string", description: "Document name (case-sensitive)" },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype", "name"],
+      required: ["doctype", "name", "api_key", "api_secret"],
     },
   },
   {
@@ -200,28 +215,22 @@ export const DOCUMENT_TOOLS = [
         doctype: { type: "string", description: "DocType name" },
         filters: {
           type: "object",
-          description: "Filters to apply (optional). Simple format: {\"field\": \"value\"} or with operators: {\"field\": [\">\", \"value\"]}. Available operators: =, !=, <, >, <=, >=, like, not like, in, not in, is, is not, between.",
+          description: "Filters to apply. Use format: {field: value} for exact match, {field: ['operator', value]} for other operators (=, !=, >, <, >=, <=, like, in, not in)",
           additionalProperties: true
         },
         fields: {
           type: "array",
           items: { type: "string" },
-          description: "Fields to retrieve (optional). For better performance, specify only the fields you need.",
+          description: "Fields to retrieve (optional). If not specified, all fields will be returned.",
         },
-        limit: {
-          type: "number",
-          description: "Maximum number of documents to retrieve (optional). Use with limit_start for pagination.",
-        },
-        limit_start: {
-          type: "number",
-          description: "Starting offset for pagination (optional). Use with limit for pagination.",
-        },
-        order_by: {
-          type: "string",
-          description: "Field to order by (optional). Format: \"field_name asc\" or \"field_name desc\".",
-        },
+        limit: { type: "number", description: "Maximum number of documents to return (default: 20)" },
+        order_by: { type: "string", description: "Field to order by (e.g., 'creation desc', 'name asc')" },
+        limit_start: { type: "number", description: "Starting index for pagination (default: 0)" },
+        api_key: { type: "string", description: "Frappe API key for authentication" },
+        api_secret: { type: "string", description: "Frappe API secret for authentication" },
+        frappe_url: { type: "string", description: "Frappe instance URL (optional, defaults to server configuration)" },
       },
-      required: ["doctype"],
+      required: ["doctype", "api_key", "api_secret"],
     },
   },
   {
@@ -264,344 +273,391 @@ export const DOCUMENT_TOOLS = [
 
 // Export a handler function for document tool calls
 export async function handleDocumentToolCall(request: any): Promise<any> {
-  const { name, arguments: args } = request.params;
+  const { name: toolName, arguments: args } = request.params;
 
-  if (!args) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Missing arguments for tool call",
-        },
-      ],
-      isError: true,
-    };
-  }
+  // Extract credentials from arguments
+  const credentials: AuthCredentials | undefined = args.api_key && args.api_secret ? {
+    apiKey: args.api_key,
+    apiSecret: args.api_secret,
+    frappeUrl: args.frappe_url
+  } : undefined;
 
-  try {
-    console.error("Handling document tool:", name, "with args:", args);
+  if (toolName === "create_document") {
+    const doctype = args.doctype as string;
+    const values = args.values as Record<string, any>;
 
-    // Handle document operations
-    if (name === "create_document") {
-      const doctype = args.doctype as string;
-      const values = args.values as Record<string, any>;
-
-      if (!doctype || !values) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Missing required parameters: doctype and values",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      // Validate required fields
-      const missingFields = await validateDocumentValues(doctype, values);
-      if (missingFields.length > 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Missing required fields: ${missingFields.join(', ')}`,
-            },
-            {
-              type: "text",
-              text: "\nTip: Use get_required_fields tool to see all required fields for this DocType.",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      try {
-        console.error(`Calling createDocument for ${doctype} with values:`, JSON.stringify(values, null, 2));
-
-        let result;
-        let authMethod = "token";
-        let verificationSuccess = false;
-        let verificationMessage = "";
-
-        // Use API key/secret authentication
-        result = await createDocument(doctype, values);
-        console.error(`Result from createDocument (API key/secret auth):`, JSON.stringify(result, null, 2));
-        authMethod = "api_key";
-
-        // Check for verification result
-        if (result._verification && result._verification.success === false) {
-          verificationSuccess = false;
-          verificationMessage = result._verification.message;
-          delete result._verification; // Remove internal property before returning to client
-        } else {
-          verificationSuccess = true;
-        }
-
-        // IMPROVED: Return error if verification failed
-        if (!verificationSuccess) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Error: Document creation reported success but verification failed. The document may not have been created.\n\nDetails: ${verificationMessage}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Document created successfully using ${authMethod} authentication:\n\n${JSON.stringify(result, null, 2)}`,
-            },
-          ],
-        };
-      } catch (error) {
-        console.error(`Error in create_document handler:`, error);
-        return formatErrorResponse(error, `create_document(${doctype})`);
-      }
-    } else if (name === "get_document") {
-      const doctype = args.doctype as string;
-      const docName = args.name as string;
-      const fields = args.fields as string[] | undefined;
-
-      if (!doctype || !docName) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Missing required parameters: doctype and name",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      try {
-        let document;
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        document = await getDocument(doctype, docName, fields);
-        console.error(`Retrieved document using API key/secret auth:`, JSON.stringify(document, null, 2));
-        authMethod = "api_key";
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Document retrieved using ${authMethod} authentication:\n\n${JSON.stringify(document, null, 2)}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, `get_document(${doctype}, ${docName})`);
-      }
-    } else if (name === "update_document") {
-      const doctype = args.doctype as string;
-      const docName = args.name as string;
-      const values = args.values as Record<string, any>;
-
-      if (!doctype || !docName || !values) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Missing required parameters: doctype, name, and values",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      try {
-        let result;
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        result = await updateDocument(doctype, docName, values);
-        console.error(`Result from updateDocument (API key/secret auth):`, JSON.stringify(result, null, 2));
-        authMethod = "api_key";
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Document updated successfully using ${authMethod} authentication:\n\n${JSON.stringify(result, null, 2)}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, `update_document(${doctype}, ${docName})`);
-      }
-    } else if (name === "delete_document") {
-      const doctype = args.doctype as string;
-      const docName = args.name as string;
-
-      if (!doctype || !docName) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Missing required parameters: doctype and name",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      try {
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        await deleteDocument(doctype, docName);
-        console.error(`Document deleted using API key/secret auth`);
-        authMethod = "api_key";
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                message: `Document ${doctype}/${docName} deleted successfully using ${authMethod} authentication`
-              }, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, `delete_document(${doctype}, ${docName})`);
-      }
-    } else if (name === "list_documents") {
-      const doctype = args.doctype as string;
-      const filters = args.filters as Record<string, any> | undefined;
-      const fields = args.fields as string[] | undefined;
-      const limit = args.limit as number | undefined;
-      const order_by = args.order_by as string | undefined;
-      const limit_start = args.limit_start as number | undefined;
-
-      if (!doctype) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Missing required parameter: doctype",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      try {
-        // Format filters if provided
-        const formattedFilters = filters ? formatFilters(filters) : undefined;
-
-        let documents;
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        documents = await listDocuments(
-          doctype,
-          formattedFilters,
-          fields,
-          limit,
-          order_by,
-          limit_start
-        );
-        console.error(`Retrieved ${documents.length} documents using API key/secret auth`);
-        authMethod = "api_key";
-
-        // Add pagination info if applicable
-        let paginationInfo = "";
-        if (limit) {
-          const startIndex = limit_start || 0;
-          const endIndex = startIndex + documents.length;
-          paginationInfo = `\n\nShowing items ${startIndex + 1}-${endIndex}`;
-
-          if (documents.length === limit) {
-            paginationInfo += ` (more items may be available, use limit_start=${endIndex} to see next page)`;
-          }
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Documents retrieved using ${authMethod} authentication:\n\n${JSON.stringify(documents, null, 2)}${paginationInfo}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, `list_documents(${doctype})`);
-      }
-    } else if (name === "reconcile_bank_transaction_with_vouchers") {
-      const bankTransactionName = args.bank_transaction_name as string;
-      const vouchers = args.vouchers as Array<{ payment_doctype: string; payment_name: string; amount: number }>;
-
-      if (!bankTransactionName || !vouchers) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Missing required parameters: bank_transaction_name and vouchers",
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (!Array.isArray(vouchers) || vouchers.some(v => !v.payment_doctype || !v.payment_name || typeof v.amount !== 'number')) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Invalid format for 'vouchers' parameter. It must be an array of objects, each with 'payment_doctype' (string), 'payment_name' (string), and 'amount' (number).",
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      try {
-        const frappeMethod = "erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.reconcile_vouchers";
-        const params = {
-          bank_transaction_name: bankTransactionName,
-          vouchers: JSON.stringify(vouchers), // Frappe method expects vouchers as a JSON string
-        };
-
-        console.error(`Calling Frappe method '${frappeMethod}' with params:`, JSON.stringify(params, null, 2));
-        const result = await callMethod(frappeMethod, params);
-        console.error(`Result from '${frappeMethod}':`, JSON.stringify(result, null, 2));
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Bank transaction '${bankTransactionName}' reconciled successfully with vouchers:\n\n${JSON.stringify(result, null, 2)}`,
-            },
-          ],
-        };
-      } catch (error) {
-        console.error(`Error in reconcile_bank_transaction_with_vouchers handler:`, error);
-        return formatErrorResponse(error, `reconcile_bank_transaction_with_vouchers(${bankTransactionName})`);
-      }
+    if (!doctype || !values) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required parameters: doctype and values",
+          },
+        ],
+        isError: true,
+      };
     }
 
+    if (!credentials) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required authentication: api_key and api_secret are required",
+          },
+        ],
+        isError: true,
+      };
+    }
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Document operations module doesn't handle tool: ${name}`,
-        },
-      ],
-      isError: true,
-    };
-  } catch (error) {
-    return formatErrorResponse(error, `document_operations.${name}`);
+    try {
+      console.error(`Calling createDocument for ${doctype} with values:`, JSON.stringify(values, null, 2));
+
+      let result;
+      let authMethod = "per-request";
+      let verificationSuccess = false;
+      let verificationMessage = "";
+
+      // Use per-request authentication
+      result = await createDocument(doctype, values, credentials);
+      console.error(`Result from createDocument (per-request auth):`, JSON.stringify(result, null, 2));
+
+      // Check for verification result
+      if (result._verification && result._verification.success === false) {
+        verificationSuccess = false;
+        verificationMessage = result._verification.message;
+        delete result._verification; // Remove internal property before returning to client
+      } else {
+        verificationSuccess = true;
+      }
+
+      // IMPROVED: Return error if verification failed
+      if (!verificationSuccess) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: Document creation reported success but verification failed. The document may not have been created.\n\nDetails: ${verificationMessage}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Document created successfully using ${authMethod} authentication:\n\n${JSON.stringify(result, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      console.error(`Error in create_document handler:`, error);
+      return formatErrorResponse(error, `create_document(${doctype})`, credentials);
+    }
   }
+
+  if (toolName === "get_document") {
+    const doctype = args.doctype as string;
+    const docName = args.name as string;
+    const fields = args.fields as string[] | undefined;
+
+    if (!doctype || !docName) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required parameters: doctype and name",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!credentials) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required authentication: api_key and api_secret are required",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    try {
+      let document;
+      let authMethod = "per-request";
+
+      // Use per-request authentication
+      document = await getDocument(doctype, docName, fields, credentials);
+      console.error(`Retrieved document using per-request auth:`, JSON.stringify(document, null, 2));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Document retrieved using ${authMethod} authentication:\n\n${JSON.stringify(document, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return formatErrorResponse(error, `get_document(${doctype}, ${docName})`, credentials);
+    }
+  }
+
+  if (toolName === "update_document") {
+    const doctype = args.doctype as string;
+    const docName = args.name as string;
+    const values = args.values as Record<string, any>;
+
+    if (!doctype || !docName || !values) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required parameters: doctype, name, and values",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!credentials) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required authentication: api_key and api_secret are required",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    try {
+      let result;
+      let authMethod = "per-request";
+
+      // Use per-request authentication
+      result = await updateDocument(doctype, docName, values, credentials);
+      console.error(`Result from updateDocument (per-request auth):`, JSON.stringify(result, null, 2));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Document updated successfully using ${authMethod} authentication:\n\n${JSON.stringify(result, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return formatErrorResponse(error, `update_document(${doctype}, ${docName})`, credentials);
+    }
+  }
+
+  if (toolName === "delete_document") {
+    const doctype = args.doctype as string;
+    const docName = args.name as string;
+
+    if (!doctype || !docName) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required parameters: doctype and name",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!credentials) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required authentication: api_key and api_secret are required",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    try {
+      let authMethod = "per-request";
+
+      // Use per-request authentication
+      await deleteDocument(doctype, docName, credentials);
+      console.error(`Document deleted using per-request auth`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Document ${doctype}/${docName} deleted successfully using ${authMethod} authentication`
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return formatErrorResponse(error, `delete_document(${doctype}, ${docName})`, credentials);
+    }
+  }
+
+  if (toolName === "list_documents") {
+    const doctype = args.doctype as string;
+    const filters = args.filters as Record<string, any> | undefined;
+    const fields = args.fields as string[] | undefined;
+    const limit = args.limit as number | undefined;
+    const order_by = args.order_by as string | undefined;
+    const limit_start = args.limit_start as number | undefined;
+
+    if (!doctype) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required parameter: doctype",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!credentials) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required authentication: api_key and api_secret are required",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    try {
+      // Format filters if provided
+      const formattedFilters = filters ? formatFilters(filters) : undefined;
+
+      let documents;
+      let authMethod = "per-request";
+
+      // Use per-request authentication
+      documents = await listDocuments(
+        doctype,
+        formattedFilters,
+        fields,
+        limit,
+        order_by,
+        limit_start,
+        credentials
+      );
+      console.error(`Retrieved ${documents.length} documents using per-request auth`);
+
+      // Add pagination info if applicable
+      let paginationInfo = "";
+      if (limit) {
+        const startIndex = limit_start || 0;
+        const endIndex = startIndex + documents.length;
+        paginationInfo = `\n\nShowing items ${startIndex + 1}-${endIndex}`;
+
+        if (documents.length === limit) {
+          paginationInfo += ` (more items may be available, use limit_start=${endIndex} to see next page)`;
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Documents retrieved using ${authMethod} authentication:\n\n${JSON.stringify(documents, null, 2)}${paginationInfo}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return formatErrorResponse(error, `list_documents(${doctype})`, credentials);
+    }
+  }
+
+  if (toolName === "reconcile_bank_transaction_with_vouchers") {
+    const bankTransactionName = args.bank_transaction_name as string;
+    const vouchers = args.vouchers as Array<{ payment_doctype: string; payment_name: string; amount: number }>;
+
+    if (!bankTransactionName || !vouchers) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required parameters: bank_transaction_name and vouchers",
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!Array.isArray(vouchers) || vouchers.some(v => !v.payment_doctype || !v.payment_name || typeof v.amount !== 'number')) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Invalid format for 'vouchers' parameter. It must be an array of objects, each with 'payment_doctype' (string), 'payment_name' (string), and 'amount' (number).",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!credentials) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Missing required authentication: api_key and api_secret are required",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    try {
+      const frappeMethod = "erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.reconcile_vouchers";
+      const params = {
+        bank_transaction_name: bankTransactionName,
+        vouchers: JSON.stringify(vouchers), // Frappe method expects vouchers as a JSON string
+      };
+
+      console.error(`Calling Frappe method '${frappeMethod}' with params:`, JSON.stringify(params, null, 2));
+      const result = await callMethod(frappeMethod, params, credentials);
+      console.error(`Result from '${frappeMethod}':`, JSON.stringify(result, null, 2));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Bank transaction '${bankTransactionName}' reconciled successfully with vouchers:\n\n${JSON.stringify(result, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      console.error(`Error in reconcile_bank_transaction_with_vouchers handler:`, error);
+      return formatErrorResponse(error, `reconcile_bank_transaction_with_vouchers(${bankTransactionName})`, credentials);
+    }
+  }
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Unknown tool: ${toolName}`,
+      },
+    ],
+    isError: true,
+  };
 }
 
 export function setupDocumentTools(server: Server): void {
