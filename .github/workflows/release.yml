@@ -22,7 +22,7 @@ jobs:
       with:
         node-version: '20.x'
         cache: 'npm'
-        registry-url: 'https://registry.npmjs.org'
+        registry-url: 'https://npm.pkg.github.com'
 
     - name: Install dependencies
       run: npm ci
@@ -41,9 +41,11 @@ jobs:
       run: |
         PACKAGE_NAME=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).name")
         PACKAGE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+        # Convert scoped package name to filename format (e.g., @alsoit/frappe-mcp-server -> alsoit-frappe-mcp-server)
+        FILENAME=$(echo "$PACKAGE_NAME" | sed 's/@//' | sed 's/\//-/')
         echo "name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
         echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
-        echo "filename=$PACKAGE_NAME-$PACKAGE_VERSION.tgz" >> $GITHUB_OUTPUT
+        echo "filename=${FILENAME}-${PACKAGE_VERSION}.tgz" >> $GITHUB_OUTPUT
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
@@ -59,23 +61,38 @@ jobs:
           - Support for multiple Frappe instances
           
           ### Installation
-          Download the package from the release assets below, or install from source:
           
+          **From GitHub Packages:**
           ```bash
-          git clone https://github.com/appliedrelevance/frappe_mcp_server.git
-          cd frappe_mcp_server
+          npm install @alsoit/frappe-mcp-server@${{ steps.package.outputs.version }} --registry=https://npm.pkg.github.com
+          ```
+          
+          **Or install globally:**
+          ```bash
+          npm install -g @alsoit/frappe-mcp-server@${{ steps.package.outputs.version }} --registry=https://npm.pkg.github.com
+          ```
+          
+          **Or from source:**
+          ```bash
+          git clone https://github.com/alsoit/frappe-mcp-server.git
+          cd frappe-mcp-server
           npm install
           npm run build
           ```
           
           ### Documentation
-          - [README](https://github.com/appliedrelevance/frappe_mcp_server#readme)
-          - [Multi-User Guide](https://github.com/appliedrelevance/frappe_mcp_server/blob/main/docs/MULTI_USER_GUIDE.md)
-          - [Contributing](https://github.com/appliedrelevance/frappe_mcp_server/blob/main/CONTRIBUTING.md)
+          - [README](https://github.com/alsoit/frappe-mcp-server#readme)
+          - [Multi-User Guide](https://github.com/alsoit/frappe-mcp-server/blob/main/docs/MULTI_USER_GUIDE.md)
+          - [Contributing](https://github.com/alsoit/frappe-mcp-server/blob/main/CONTRIBUTING.md)
         files: |
           ${{ steps.package.outputs.filename }}
         draft: false
         prerelease: false
+
+    - name: Publish to GitHub Packages
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
     runs-on: ubuntu-latest
@@ -86,5 +103,5 @@ jobs:
     - name: Notify success
       run: |
         echo "✅ Release completed successfully!"
-        echo "📦 Package created and attached to release"
+        echo "📦 Package published to GitHub Packages"
         echo "🚀 GitHub release created" 
