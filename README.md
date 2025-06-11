@@ -210,7 +210,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ### Quick Start for Contributors
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/frappe_mcp_server.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/frappe-mcp-server.git`
 3. Install dependencies: `npm install`
 4. Build the project: `npm run build`
 5. Make your changes and test them
@@ -219,8 +219,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## Support
 
 - **Documentation**: Check our comprehensive [docs/](docs/) directory
-- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/appliedrelevance/frappe_mcp_server/issues)
-- **Discussions**: Join conversations on [GitHub Discussions](https://github.com/appliedrelevance/frappe_mcp_server/discussions)
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/alsoit/frappe-mcp-server/issues)
+- **Discussions**: Join conversations on [GitHub Discussions](https://github.com/alsoit/frappe-mcp-server/discussions)
 
 ## License
 

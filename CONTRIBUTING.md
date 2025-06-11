@@ -28,8 +28,8 @@ Thank you for your interest in contributing to the Frappe MCP Server! This docum
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/frappe_mcp_server.git
-   cd frappe_mcp_server
+   git clone https://github.com/YOUR_USERNAME/frappe-mcp-server.git
+   cd frappe-mcp-server
    ```
 
 3. Install dependencies:

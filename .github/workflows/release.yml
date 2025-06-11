@@ -72,9 +72,9 @@ jobs:
           ```
           
           ### Documentation
-          - [README](https://github.com/appliedrelevance/frappe_mcp_server#readme)
-          - [Multi-User Guide](https://github.com/appliedrelevance/frappe_mcp_server/blob/main/docs/MULTI_USER_GUIDE.md)
-          - [Contributing](https://github.com/appliedrelevance/frappe_mcp_server/blob/main/CONTRIBUTING.md)
+          - [README](https://github.com/alsoit/frappe-mcp-server#readme)
+          - [Multi-User Guide](https://github.com/alsoit/frappe-mcp-server/blob/main/docs/MULTI_USER_GUIDE.md)
+          - [Contributing](https://github.com/alsoit/frappe-mcp-server/blob/main/CONTRIBUTING.md)
         draft: false
         prerelease: false
 
