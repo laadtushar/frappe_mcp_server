@@ -1,5 +1,5 @@
 {
-  "name": "frappe-mcp-server",
+  "name": "@alsoit/frappe-mcp-server",
   "version": "1.0.0",
   "description": "Multi-user Model Context Protocol (MCP) server for Frappe Framework with comprehensive REST API integration, supporting per-request authentication and multiple Frappe instances",
   "main": "build/index.js",
@@ -35,9 +35,9 @@
   ],
   "author": "Applied Relevance",
   "license": "MIT",
-  "homepage": "https://github.com/appliedrelevance/frappe_mcp_server#readme",
+  "homepage": "https://github.com/alsoit/frappe-mcp-server#readme",
   "bugs": {
-    "url": "https://github.com/appliedrelevance/frappe_mcp_server/issues"
+    "url": "https://github.com/alsoit/frappe-mcp-server/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
@@ -54,7 +54,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/appliedrelevance/frappe_mcp_server.git"
+    "url": "git+https://github.com/alsoit/frappe-mcp-server.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "files": [
     "build/",
