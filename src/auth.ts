@@ -116,6 +116,11 @@ export async function checkFrappeApiHealth(credentials?: AuthCredentials): Promi
     try {
       console.error("Attempting token authentication health check...");
       const client = credentials ? createFrappeClient(credentials.apiKey, credentials.apiSecret, credentials.frappeUrl) : frappe;
+      
+      if (!client) {
+        throw new Error('Frappe client not available');
+      }
+      
       const tokenResponse = await client.db().getDocList("DocType", { limit: 1 });
       result.tokenAuth = true;
       console.error("Token authentication health check successful");
