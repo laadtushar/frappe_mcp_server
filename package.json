@@ -1,5 +1,5 @@
 {
-  "name": "frappe-mcp-server",
+  "name": "@alsoit/frappe-mcp-server",
   "version": "1.0.0",
   "description": "Multi-user Model Context Protocol (MCP) server for Frappe Framework with comprehensive REST API integration, supporting per-request authentication and multiple Frappe instances",
   "main": "build/index.js",
@@ -55,6 +55,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/alsoit/frappe-mcp-server.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "files": [
     "build/",
