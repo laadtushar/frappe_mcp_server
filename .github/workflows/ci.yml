@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Type check
+      run: npx tsc --noEmit
+
+    - name: Build
+      run: npm run build
+
+    - name: Check build output
+      run: |
+        if [ ! -f "build/index.js" ]; then
+          echo "Build failed: index.js not found"
+          exit 1
+        fi
+        echo "Build successful"
+
+    - name: Validate package.json
+      run: npm run fixpkg
+
+    - name: Check for security vulnerabilities
+      run: npm audit --audit-level=high
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Check TypeScript compilation
+      run: npx tsc --noEmit --strict
+
+    - name: Validate JSON files
+      run: |
+        # Validate package.json
+        node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+        # Validate tsconfig.json
+        node -e "JSON.parse(require('fs').readFileSync('tsconfig.json', 'utf8'))"
+        # Validate example config
+        node -e "JSON.parse(require('fs').readFileSync('claude_desktop_config.json.example', 'utf8'))"
+        echo "All JSON files are valid"
+
+  package:
+    runs-on: ubuntu-latest
+    needs: [build, lint]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    - name: Test package creation
+      run: |
+        npm pack
+        # Check if package was created
+        if [ ! -f frappe-mcp-server-*.tgz ]; then
+          echo "Package creation failed"
+          exit 1
+        fi
+        echo "Package created successfully"
+
+    - name: Upload package artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: npm-package
+        path: frappe-mcp-server-*.tgz
+        retention-days: 7 

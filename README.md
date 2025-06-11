@@ -198,6 +198,34 @@ When using per-request authentication, include your credentials in each tool cal
 
 All tools now support per-request authentication by including `api_key`, `api_secret`, and optionally `frappe_url` parameters.
 
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Setting up the development environment
+- Code style and standards
+- Testing procedures
+- Submitting pull requests
+
+### Quick Start for Contributors
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/frappe-mcp-server.git`
+3. Install dependencies: `npm install`
+4. Build the project: `npm run build`
+5. Make your changes and test them
+6. Submit a pull request
+
+## Support
+
+- **Documentation**: Check our comprehensive [docs/](docs/) directory
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/alsoit/frappe-mcp-server/issues)
+- **Discussions**: Join conversations on [GitHub Discussions](https://github.com/alsoit/frappe-mcp-server/discussions)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 ## Multi-User Benefits
 
 The per-request authentication model provides several advantages:

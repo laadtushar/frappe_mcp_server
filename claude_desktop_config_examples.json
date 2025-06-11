@@ -1,12 +1,52 @@
 {
   "examples": {
-    "per_request_auth": {
-      "description": "Recommended setup for multi-user environments. Users provide credentials with each request.",
+    "per_request_auth_local_repo": {
+      "description": "Recommended setup for development/local repository. Users provide credentials with each request.",
+      "config": {
+        "mcpServers": {
+          "frappe": {
+            "command": "node",
+            "args": ["build/index.js"],
+            "cwd": "/path/to/your/frappe_mcp_server",
+            "env": {
+              "FRAPPE_URL": "http://127.0.0.1:8000"
+            },
+            "disabled": false,
+            "alwaysAllow": []
+          }
+        }
+      },
+      "setup_steps": [
+        "1. Clone the repository: git clone <repo-url>",
+        "2. Install dependencies: npm install",
+        "3. Build the project: npm run build",
+        "4. Update 'cwd' path to your local repository directory",
+        "5. Restart Claude Desktop"
+      ],
+      "usage": {
+        "note": "Users must provide api_key and api_secret with each tool call",
+        "example_tool_call": {
+          "name": "create_document",
+          "arguments": {
+            "doctype": "Customer",
+            "values": {
+              "customer_name": "John Doe",
+              "customer_type": "Individual"
+            },
+            "api_key": "your_api_key_here",
+            "api_secret": "your_api_secret_here",
+            "frappe_url": "http://127.0.0.1:8000"
+          }
+        }
+      }
+    },
+    "per_request_auth_npm": {
+      "description": "Setup using published npm package. Users provide credentials with each request.",
       "config": {
         "mcpServers": {
           "frappe": {
             "command": "npx",
-            "args": ["frappe-mcp-server"],
+            "args": ["frappe-mcp-server@latest"],
             "env": {
               "FRAPPE_URL": "http://127.0.0.1:8000"
             },
@@ -32,8 +72,45 @@
         }
       }
     },
-    "environment_auth": {
-      "description": "Legacy setup for single-user environments. Credentials set as environment variables.",
+    "environment_auth_local_repo": {
+      "description": "Local repository setup for single-user environments. Credentials set as environment variables.",
+      "config": {
+        "mcpServers": {
+          "frappe": {
+            "command": "node",
+            "args": ["build/index.js"],
+            "cwd": "/path/to/your/frappe_mcp_server",
+            "env": {
+              "FRAPPE_URL": "http://127.0.0.1:8000",
+              "FRAPPE_API_KEY": "2e3685c514dc67f",
+              "FRAPPE_API_SECRET": "76d538faa56393e"
+            },
+            "disabled": false,
+            "alwaysAllow": []
+          }
+        }
+      },
+      "setup_steps": [
+        "1. Clone and build the repository (see per_request_auth_local_repo)",
+        "2. Replace placeholder credentials with your actual API key/secret",
+        "3. Update 'cwd' path to your local repository directory"
+      ],
+      "usage": {
+        "note": "No credentials needed in tool calls when environment variables are set",
+        "example_tool_call": {
+          "name": "create_document",
+          "arguments": {
+            "doctype": "Customer",
+            "values": {
+              "customer_name": "John Doe",
+              "customer_type": "Individual"
+            }
+          }
+        }
+      }
+    },
+    "environment_auth_npm": {
+      "description": "NPM package setup for single-user environments. Credentials set as environment variables.",
       "config": {
         "mcpServers": {
           "frappe": {
@@ -63,13 +140,14 @@
         }
       }
     },
-    "mixed_auth": {
-      "description": "Hybrid setup where environment variables provide fallback, but per-request auth is also supported.",
+    "mixed_auth_local_repo": {
+      "description": "Local repository hybrid setup where environment variables provide fallback, but per-request auth is also supported.",
       "config": {
         "mcpServers": {
           "frappe": {
-            "command": "npx",
-            "args": ["frappe-mcp-server"],
+            "command": "node",
+            "args": ["build/index.js"],
+            "cwd": "/path/to/your/frappe_mcp_server",
             "env": {
               "FRAPPE_URL": "http://127.0.0.1:8000",
               "FRAPPE_API_KEY": "default_api_key",

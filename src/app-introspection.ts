@@ -64,6 +64,11 @@ export async function getAppForDocType(doctype: string): Promise<string | null> 
     }
 
     // Query Frappe to get the module for this DocType
+    if (!frappe) {
+      console.error('Frappe client not initialized');
+      return null;
+    }
+    
     const doctypeDoc = await frappe.db().getDoc('DocType', doctype);
     if (!doctypeDoc || !doctypeDoc.module) {
       return null;

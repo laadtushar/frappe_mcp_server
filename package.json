@@ -1,7 +1,7 @@
 {
   "name": "frappe-mcp-server",
-  "version": "0.2.16",
-  "description": "Enhanced Model Context Protocol server for Frappe Framework with comprehensive API instructions and helper tools",
+  "version": "1.0.0",
+  "description": "Multi-user Model Context Protocol (MCP) server for Frappe Framework with comprehensive REST API integration, supporting per-request authentication and multiple Frappe instances",
   "main": "build/index.js",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "test-server": "node test-server.js",
     "test-tools": "node test-tools.js",
     "fixpkg": "npm pkg fix",
+    "prepublishOnly": "npm run build",
     "publish": "npm publish --access public"
   },
   "bin": {
@@ -20,13 +21,24 @@
   "keywords": [
     "frappe",
     "mcp",
+    "model-context-protocol",
     "ai",
     "claude",
     "anthropic",
-    "erp"
+    "erp",
+    "rest-api",
+    "multi-user",
+    "authentication",
+    "document-management",
+    "schema",
+    "typescript"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Applied Relevance",
+  "license": "MIT",
+  "homepage": "https://github.com/alsoit/frappe-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/alsoit/frappe-mcp-server/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
     "axios": "^1.8.2",
@@ -42,6 +54,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/appliedrelevance/frappe_mcp_server.git"
-  }
+    "url": "git+https://github.com/alsoit/frappe-mcp-server.git"
+  },
+  "files": [
+    "build/",
+    "docs/",
+    "examples/",
+    "README.md",
+    "LICENSE",
+    "claude_desktop_config.json.example"
+  ]
 }
