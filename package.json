@@ -40,7 +40,7 @@
     "url": "https://github.com/alsoit/frappe-mcp-server/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.6.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "axios": "^1.8.2",
     "frappe-js-sdk": "^1.7.0"
   },
